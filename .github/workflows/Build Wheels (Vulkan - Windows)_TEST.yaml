@@ -1,0 +1,70 @@
+name: Build Wheels (Vulkan - Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_wheels:
+    name: Build Wheel Windows Python ${{ matrix.pyver }} Vulkan
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        pyver: ["3.9", "3.10", "3.11", "3.12"]
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.pyver }}
+          cache: 'pip'
+
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: "1.4.309.0"
+
+      - name: Install Build Dependencies
+        run: |
+          python -m pip install build wheel ninja
+
+      - name: Build Wheel with Vulkan
+        env:
+          CMAKE_ARGS: "-DGGML_VULKAN=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"
+        run: |
+          Write-Host "Using CMAKE_ARGS: $env:CMAKE_ARGS"
+          $env:CMAKE_GENERATOR = "Ninja"
+          python -m build --wheel
+
+      # ==================== 关键：上传 Artifacts ====================
+      - name: Upload Wheel as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama-cpp-python-vulkan-py${{ matrix.pyver }}
+          path: dist/*.whl
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Tag 发布（可选）
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          tag_name: ${{ github.ref_name }}-vulkan-windows
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
